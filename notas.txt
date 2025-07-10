@@ -1,0 +1,1 @@
+ALTER TABLE `detalleventas` DROP FOREIGN KEY `detalleventas_venta_id_foreign`; ALTER TABLE `detalleventas` ADD CONSTRAINT `detalleventas_venta_id_foreign` FOREIGN KEY (`venta_id`) REFERENCES `ventas`(`idVenta`) ON DELETE CASCADE ON UPDATE RESTRICT;
