@@ -14,6 +14,8 @@ use App\Models\detalleVenta;
 use App\Models\Empresa;
 use App\Models\Producto;
 use App\Models\Salida;
+use Exception;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 class VentaController extends Controller
 {
@@ -125,39 +127,6 @@ class VentaController extends Controller
         //echo $v;
         return view('ventas.invoice')->with('v', $v)->with('d', $d)->with('e', $e);
     }
-    /**
-     * Display the specified resource.
-     *
-     * @param  \App\Models\venta  $venta
-     * @return \Illuminate\Http\Response
-     */
-    public function show(venta $venta)
-    {
-        //
-    }
-
-    /**
-     * Show the form for editing the specified resource.
-     *
-     * @param  \App\Models\venta  $venta
-     * @return \Illuminate\Http\Response
-     */
-    public function edit(venta $venta)
-    {
-        //
-    }
-
-    /**
-     * Update the specified resource in storage.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \App\Models\venta  $venta
-     * @return \Illuminate\Http\Response
-     */
-    public function update(Request $request, venta $venta)
-    {
-        //
-    }
 
     /**
      * Remove the specified resource from storage.
@@ -165,9 +134,58 @@ class VentaController extends Controller
      * @param  \App\Models\venta  $venta
      * @return \Illuminate\Http\Response
      */
-    public function destroy(venta $venta)
+    public function destroy($id)
     {
-        //
+        DB::beginTransaction();
+        try {
+            //$venta = Venta::findOrFail($id);
+            $venta = Venta::with('detalles.producto')->findOrFail($id);
+
+            // Validar si la fecha de creación es igual a hoy
+            $fechaHoy = now()->toDateString(); // Formato 'YYYY-MM-DD'
+            $fechaCreacion = $venta->created_at->toDateString();
+
+            if ($fechaHoy !== $fechaCreacion) {
+                return response()->json([
+                    'message' => 'Solo se pueden eliminar facturas generadas el mismo día.',
+                    'code' => 'VALIDATION_ERROR'
+                ], 403);
+            }
+
+            // Reponer inventario
+            foreach ($venta->detalles as $detalle) {
+                $producto = $detalle->producto;
+
+                if ($producto) {
+                    $producto->existencia_pd += $detalle->cantidad_v;
+                    $producto->save();
+                }
+            }
+
+            $venta->delete();
+            DB::commit();
+            return response()->json(['message' => 'Factura eliminada correctamente'], 200);
+        } catch (ModelNotFoundException $e) {
+            return response()->json(['message' => 'Factura no encontrada.'], 404);
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error("❌ Error al anular factura ID $id: " . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Ocurrió un error al anular la factura.',
+                'error' => $e->getMessage(),
+                'code' => 500
+            ], 500);
+        } catch (QueryException $e) {
+            if ($e->getCode() === '23000') {
+                return response()->json([
+                    'message' => 'Esta factura no se puede eliminar porque está asociada a otros registros.',
+                    'code' => '304'
+                ], 400);
+            }
+            Log::error("Error al eliminar factura ID {$id}: " . $e->getMessage());
+            return response()->json(['message' => 'Error al eliminar la factura'], 500);
+        }
     }
 
     public function getDataVentasPorAnio()
