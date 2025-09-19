@@ -269,4 +269,36 @@ class VentaController extends Controller
         // Opcional: Mostrar el PDF en el navegador
         return $pdf->stream('ticket.pdf');
     }
+
+
+    public function generarTicket2($idVenta)
+    {
+        $empresa = Empresa::first();
+        $venta = Venta::with(['cliente', 'detalles.producto'])->find($idVenta);
+
+        if (!$venta) {
+            return redirect()->back()->with('error', 'La venta no existe.');
+        }
+
+        // Calcular totales
+        $total = $venta->detalles->sum(function ($detalle) {
+            return $detalle->cantidad_v * $detalle->valor_v;
+        });
+        $iva = $total * 0.19;
+        $bruto = $total - $iva;
+
+        // Datos para el ticket
+        $datos = [
+            'empresa' => $empresa,
+            'venta' => $venta,
+            'subtotal' => $bruto,
+            'iva' => $iva,
+            'total' => $total,
+        ];
+
+        // Ajuste de tamaño: ancho 215pt (76mm), alto 600pt (puedes ajustar el alto si lo necesitas)
+        $pdf = Pdf::loadView('ventas.ticket2', $datos)->setPaper([0, 0, 215, 600], 'portrait');
+
+        return $pdf->stream('ticket.pdf');
+    }
 }
